@@ -2,6 +2,14 @@ Shell script to spawn a command within a network namespace with the only
 visible network link being Mullvad WireGuard tunnel connected to a random
 server (within a certain country and/or city).
 
+The configuration lives at `/etc/mullvad-netns/config`, it is a shell script
+that is sourced when the program is run. There is a default configuration
+installed that defines some variables.
+
+As a quick start, one should set their account number. The default location
+of this file is `/etc/mullvad-netns/account`. This file must not be readable
+by anyone other than root.
+
 ```text
 Usage:
   mullvad-netns [options] -- <command>
