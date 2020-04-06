@@ -67,12 +67,22 @@ _jq() {
 	runuser -u nobody -- jq "${@}"
 }
 
+_trim_spaces() {
+	: "${1#"${1%%[![:space:]]*}"}"
+	: "${_%"${_##*[![:space:]]}"}"
+	printf '%s\n' "$_"
+}
+
 mullvad_update_server_list() {
 	# atomically update the mullvad server list cache
+	if [[ ! -d ${SERVERS_CACHE%/*} ]]; then
+		mkdir -p "${SERVERS_CACHE%/*}" || return
+	fi
 
 	TEMPFILES+=("$(mktemp "${SERVERS_CACHE%/*}/.mullvad-servers-XXXXXX.json")") || return
 	local tempfile="${TEMPFILES[-1]}"
 	_curl "${RELAYS_URI}" | _jq . > "${tempfile}" || { rm -f "${tempfile}"; return 1; }
+	chmod 0644 "${tempfile}" || return
 	mv -f "${tempfile}" "${SERVERS_CACHE}"
 }
 
@@ -92,7 +102,7 @@ mullvad_select_random_server() {
 	[[ -n ${city} ]] && city_select="| select(.name | test(\"${city}\"; \"i\"))"
 
 	local -a server_list
-	readarray -t server_list <<< "$(_jq -r "
+	readarray -t server_list < <(_jq -r "
 			(.countries[] ${country_select}
 				| (.cities[] ${city_select}
 					| (.relays[]
@@ -100,7 +110,7 @@ mullvad_select_random_server() {
 				)
 			)
 			| flatten
-			| join(\"\\t\")" "${SERVERS_CACHE}")" || return
+			| join(\"\\t\")" "${SERVERS_CACHE}") || return
 
 	local server_count="${#server_list[@]}"
 
@@ -109,18 +119,32 @@ mullvad_select_random_server() {
 
 mullvad_set_local_ips() {
 	local pubkey="${1}"
-	local account
+	local account_lines account
 
 	if [[ ! -r ${ACCOUNT_FILENAME} ]]; then
 		printf -- '%s: Could not find Mullvad account file at "%s"\n' "${progname}" "${ACCOUNT_FILENAME}" >&2
 		return 1
-	elif ! account="$(< "${ACCOUNT_FILENAME}")"; then
+	elif  [[ $(($(stat --format='0%a' "${ACCOUNT_FILENAME}") & 0133)) -ne 0 ]]; then
+		printf -- '%s: Mullvad account file "%s" should not be readable or writeable by others\n' "${progname}" "${ACCOUNT_FILENAME}" >&2
+		return 1
+	elif ! readarray -t account_lines < "${ACCOUNT_FILENAME}"; then
 		printf -- '%s: Cound not read Mullvad account from "%s"\n' "${progname}" "${ACCOUNT_FILENAME}" >&2
 		return 1
 	fi
 
+	local account_line
+	for account_line in "${account_lines[@]}"; do
+		[[ ${account_line} == \#* ]] && continue
+		if [[ ${account_line} =~ ^[[:space:]]*((([0-9]{4}[[:space:]]+){3}[0-9]{4})|[0-9]{16})[[:space:]]*(#.*|)$ ]]; then
+			account="$(_trim_spaces "${account_line%#*}")"
+		else
+			printf -- '%s: WARNING skipping invalid account "%s"\n' "${progname}" "${account_line}" >&2
+			continue
+		fi
+	done
+
 	if [[ ! ${account} =~ ^((([0-9]{4}[[:space:]]+){3}[0-9]{4})|[0-9]{16})$ ]]; then
-		printf -- '%s: Invalid Mullvad account in "%s"\n' "${progname}" "${ACCOUNT_FILENAME}" >&2
+		printf -- '%s: Could not find valid Mullvad account in "%s"\n' "${progname}" "${ACCOUNT_FILENAME}" >&2
 		return 1
 	fi
 
@@ -148,6 +172,10 @@ get_wireguard_keys() {
 
 	local privatekey pubkey
 	if [[ -r ${keyfile} ]]; then
+		if  [[ $(($(stat --format='0%a' "${keyfile}") & 0133)) -ne 0 ]]; then
+			printf -- '%s: Private key file "%s" should not be readable or writeable by others\n' "${progname}" "${keyfile}" >&2
+			return 1
+		fi
 		privatekey="$(<"${keyfile}")" || return
 	else
 		privatekey=$(set -o pipefail; umask 077; wg genkey | tee "${keyfile}") || return
@@ -223,10 +251,15 @@ name_netns() {
 	local name="${linkname}" counter=0
 
 	# make sure the network namespace name isn't already in use
-	while ip netns list | grep -F -s "${name}"; do
+	while ip netns list | grep -q -F -- "${name}"; do
 		((counter++))
 		name="${linkname}-${counter}"
 	done
+
+	if [[ -z ${name} ]]; then
+		printf '%s: could not find a valid netns name\n' "${progname}" >&2
+		return 1
+	fi
 
 	# we will use the linkname as the netns for now
 	netns="${name}"
@@ -284,20 +317,20 @@ parse_args() {
 			-c|--city) city="${2}"; shift;;
 			-4|--ipv4)
 				if [[ -n ${ipv6} ]]; then
-					printf '%s: cannot specify both --ipv4 and --ipv6\n' "${progname}" >&2
+					printf -- '%s: cannot specify both --ipv4 and --ipv6\n' "${progname}" >&2
 					return 1
 				fi
 				ipv4=1
 			;;
 			-6|--ipv6)
 				if [[ -n ${ipv4} ]]; then
-					printf '%s: cannot specify both --ipv4 and --ipv6\n' "${progname}" >&2
+					printf -- '%s: cannot specify both --ipv4 and --ipv6\n' "${progname}" >&2
 					return 1
 				fi
 				ipv6=1
 			;;
 			-h|--help) show_usage; exit 0;;
-			--) shift; break;; 
+			--) shift; break;;
 		esac
 		shift
 	done
@@ -316,8 +349,23 @@ main() {
 	local progname="${BASH_SOURCE[0]##*/}"
 	trap cleanup EXIT
 
+	if [[ ${EUID} -ne 0 ]]; then
+			printf -- '%s: superuser privileges requires\n' "${progname}" >&2
+			return 1
+	elif [[ $(id --group) -ne 0 ]]; then
+			printf -- '%s: must be run with GID 0\n' "${progname}" >&2
+			return 1
+	fi
+
 	# source the config file if it exists
 	if [[ -r ${CONFIG_FILE} ]]; then
+		if [[ ! -O ${CONFIG_FILE} || ! -G ${CONFIG_FILE} ]]; then
+			printf -- '%s: Config file "%s" must be owned by root:root\n' "${progname}" "${CONFIG_FILE}" >&2
+			return 1
+		elif [[ $(($(stat --format='0%a' "${CONFIG_FILE}") & 0122)) -ne 0 ]]; then
+			printf -- '%s: Config file "%s" must not be writeable by group or other\n' "${progname}" "${CONFIG_FILE}" >&2
+			return 1
+		fi
 		source "${CONFIG_FILE}" || return
 	fi
 
@@ -326,21 +374,21 @@ main() {
 		return 1
 	fi
 
-	local city country ipv4 ipv6
+	local city="${CITY}" country="${COUNTRY}" ipv4 ipv6
 	local -a args
 	parse_args "${@}" || return
 
 	local private_key public_key
-	read -r private_key public_key <<< "$(get_wireguard_keys)" || return
+	read -r private_key public_key < <(get_wireguard_keys) || return
 
 	local linkname pubkey ipv4_addr ipv6_addr
-	read -r linkname pubkey ipv4_addr ipv6_addr \
-		<<< "$(mullvad_select_random_server "${COUNTRY}" "${CITY}")" || return
-
-	local local_ipv4 local_ipv6
-	mullvad_set_local_ips "${public_key}" || return
+	read -r linkname pubkey ipv4_addr ipv6_addr < \
+		<(mullvad_select_random_server "${country}" "${city}") || return
 
 	name_netns || return
+
+	local local_ipv4 local_ipv6
+	mullvad_set_local_ips "${public_key}" || return ${?}
 
 	setup_interface || return
 	setup_mount_namespace "${args[@]}" || return
