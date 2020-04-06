@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: GPL-2.0+
 
-CONFIG_FILE="/etc/wireguard/mullvad/config"
+CONFIG_FILE="/etc/mullvad-netns/config"
 
 # all these variables can be overriden in the config file
 MULLVAD_PORT=51820
@@ -22,19 +22,19 @@ COUNTRY="usa"
 CITY=", ca"
 
 # file name to find the account in
-ACCOUNT_FILENAME="/etc/wireguard/mullvad/account"
+ACCOUNT_FILENAME="/etc/mullvad-netns/account"
 
 # directory to store keys in
-WG_KEYFILE="/etc/wireguard/mullvad/privatekey"
+WG_KEYFILE="/etc/mullvad-netns/privatekey"
 
 # location of cache of servers list
-SERVERS_CACHE="/var/lib/misc/mullvad-servers.json"
+SERVERS_CACHE="/var/lib/mullvad-netns/mullvad-servers.json"
 
 # how often to refresh cache of mullvad servers
 SERVERS_CACHE_MAX_AGE="1 day"
 
 # location to load nftables rules from
-NFTABLES_RULESET="/etc/wireguard/mullvad/rules.nft"
+NFTABLES_RULESET="/etc/mullvad-netns/rules.nft"
 
 # list of nameservers to use inside the netns
 NAMESERVERS=(
