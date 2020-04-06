@@ -2,7 +2,7 @@
 NAME = mullvad-netns
 
 PREFIX ?= usr
-BINDIR ?= usr/bin
+BINDIR ?= usr/sbin
 SYSCONFDIR ?= etc
 INSTALL = install
 
