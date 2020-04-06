@@ -2,8 +2,8 @@
 
 flush ruleset
 
-# fill in your ports here
-define mullvad_ports = { 20000, 30000 }
+# fill in your ports here and uncomment this and the commented line below
+#define mullvad_ports = { 20000, 30000 }
 
 table inet filter {
 	chain input {
@@ -15,7 +15,7 @@ table inet filter {
 		iif != lo ip6 daddr ::1/128 drop comment "drop connections to loopback not coming from loopback"
 		ip protocol icmp accept comment "accept all ICMP types"
 		ip6 nexthdr icmpv6 accept comment "accept all ICMP types"
-		tcp dport $mullvad_ports accept comment "accept Mullvad ports"
+		#tcp dport $mullvad_ports accept comment "accept Mullvad ports"
 	}
 
 	chain forward {
