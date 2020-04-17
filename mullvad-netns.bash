@@ -110,7 +110,7 @@ mullvad_select_random_server() {
 				)
 			)
 			| flatten
-			| join(\"\\t\")" "${SERVERS_CACHE}") || return
+			| join(\"\\t\")" "${SERVERS_CACHE}"); wait "${!}" || return
 
 	local server_count="${#server_list[@]}"
 
@@ -379,11 +379,11 @@ main() {
 	parse_args "${@}" || return
 
 	local private_key public_key
-	read -r private_key public_key < <(get_wireguard_keys) || return
+	read -r private_key public_key < <(get_wireguard_keys); wait "${!}" || return
 
 	local linkname pubkey ipv4_addr ipv6_addr
 	read -r linkname pubkey ipv4_addr ipv6_addr < \
-		<(mullvad_select_random_server "${country}" "${city}") || return
+		<(mullvad_select_random_server "${country}" "${city}"); wait "${!}" || return
 
 	name_netns || return
 
