@@ -59,7 +59,7 @@ cleanup() {
 
 _curl() {
 	# drop privliges and run curl
-	runuser -u nobody -- curl --location --silent --show-error "${@}"
+	runuser -u nobody -- curl --location --fail --fail-early --silent --show-error "${@}"
 }
 
 _jq() {
