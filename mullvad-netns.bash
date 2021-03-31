@@ -195,14 +195,22 @@ setup_interface() {
 		"link set netns ${netns} ${linkname}"
 	)
 
-	# script to run to bring the link up
-	local -a linkup_script=(
+	# scripts that get run for the final steps
+	local -a address_script=(
 		"address add ${local_ipv4} dev ${linkname}"
+	)
+	local -a address6_script=(
 		"address add ${local_ipv6} dev ${linkname}"
-		"link set dev lo up"
-		"link set dev ${linkname} up"
+	)
+	local -a linkup_script=(
+		"link set up dev lo"
+		"link set up dev ${linkname}"
+	)
+	local -a routes_script=(
 		"route add default dev ${linkname} scope global"
-		"-family inet6 route add default dev ${linkname} scope global"
+	)
+	local -a routes6_script=(
+		"route add default dev ${linkname} scope global"
 	)
 
 	# initial setup
@@ -238,8 +246,16 @@ setup_interface() {
 		fi
 	fi
 
-	# finally bring up the interfaces
-	if ! ip -batch - <<< "$(printf -- "netns exec ${netns} ip %s\n" "${linkup_script[@]}")"; then
+	# configure addresses on interfaces, bring them up and initialize the routes
+	if ! (
+		set -e
+		ip -family inet -netns "${netns}" -batch - <<< "$(printf -- "%s\n" "${address_script[@]}")"
+		ip -family inet6 -netns "${netns}" -batch - <<< "$(printf -- "%s\n" "${address6_script[@]}")"
+		ip -netns "${netns}" -batch - <<< "$(printf -- "%s\n" "${linkup_script[@]}")"
+		ip -family inet -netns "${netns}" -batch - <<< "$(printf -- "%s\n" "${routes_script[@]}")"
+		ip -family inet6 -netns "${netns}" -batch - <<< "$(printf -- "%s\n" "${routes6_script[@]}")"
+	); then
+
 		ip netns del "${linkname}"
 		return 1
 	fi
