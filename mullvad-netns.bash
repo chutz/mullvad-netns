@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: GPL-2.0+
 
-CONFIG_FILE="/etc/mullvad-netns/config"
+CONFIG_FILE=${MULLVAD_NETNS_CONF:-"/etc/mullvad-netns/config"}
 
 # all these variables can be overriden in the config file
 MULLVAD_PORT=51820
