@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Author: Patrick McLean <chutzpah@gentoo.org>
 #
@@ -295,7 +295,7 @@ setup_mount_namespace() {
 	mountns_command=(
 		"mount --bind \"${tempfile}\" /etc/resolv.conf"
 		"&& exec ip netns exec \"${netns}\""
-		"runuser --pty --shell=/bin/bash --command='${run_command}' - ${SUDO_USER}"
+		"runuser --pty --shell=$(command -v bash) --command='${run_command}' - ${SUDO_USER}"
 	)
 
 	unshare --mount bash -c "${mountns_command[*]}"
